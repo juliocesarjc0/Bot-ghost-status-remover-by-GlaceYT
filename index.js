@@ -1,119 +1,94 @@
 /**
- ██████╗░████████╗██╗░░██╗           
- ██╔══██╗╚══██╔══╝╚██╗██╔╝          
- ██████╔╝░░░██║░░░░╚███╔╝░          
- ██╔══██╗░░░██║░░░░██╔██╗░          
- ██║░░██║░░░██║░░░██╔╝╚██╗          
- ╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝          
-  GIT : https://github.com/RTX-GAMINGG/Bot-ghost-status-remover-by-RTX
-  DISCORD SERVER : https://discord.gg/FUEHs7RCqz
-  YOUTUBE : https://www.youtube.com/channel/UCPbAvYWBgnYhliJa1BIrv0A
- * **********************************************
- *   Code by RTX GAMING
- * **********************************************
+ * Discord Status Bot - Main Entry Point
+ * A Discord bot that rotates status messages with an Express health check server
+ * 
+ * Repository: https://github.com/juliocesarjc0/CAROL-STORE
  */
 
+const { createLogger } = require('./src/logger');
+const DiscordBot = require('./src/bot');
+const ExpressServer = require('./src/server');
+const config = require('./src/config');
 
+const logger = createLogger('Main');
 
-const { Client, GatewayIntentBits, ActivityType, TextChannel } = require('discord.js');
-require('dotenv').config();
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const client = new Client({
-  intents: Object.keys(GatewayIntentBits).map((a) => {
-    return GatewayIntentBits[a];
-  }),
-});
-const app = express();
-const port = 3000;
-app.get('/', (req, res) => {
-  res.send('YaY Your Bot Status Changed✨');
-});
-app.listen(port, () => {
-  console.log(`🔗 Listening to RTX: http://localhost:${port}`);
-  console.log(`🔗 Powered By RTX`);
-});
+// Application state
+let bot = null;
+let server = null;
+let isShuttingDown = false;
 
+/**
+ * Gracefully shuts down the application
+ */
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) {
+    return;
+  }
 
-const statusMessages = ["PLAYING","MUSIC"];
+  isShuttingDown = true;
+  logger.info(`Received ${signal}, shutting down gracefully...`);
 
-
-let currentIndex = 0;
-const channelId = '';
-
-async function login() {
   try {
-    await client.login(process.env.TOKEN);
-    console.log(`\x1b[36m%s\x1b[0m`, `|    🐇 Logged in as ${client.user.tag}`);
+    // Stop the bot first
+    if (bot) {
+      await bot.shutdown();
+    }
+
+    // Then stop the server
+    if (server) {
+      await server.stop();
+    }
+
+    logger.success('Application shut down successfully');
+    process.exit(0);
   } catch (error) {
-    console.error('Failed to log in:', error);
+    logger.error('Error during shutdown', error);
     process.exit(1);
   }
 }
 
 /**
- ██████╗░████████╗██╗░░██╗           
- ██╔══██╗╚══██╔══╝╚██╗██╔╝          
- ██████╔╝░░░██║░░░░╚███╔╝░          
- ██╔══██╗░░░██║░░░░██╔██╗░          
- ██║░░██║░░░██║░░░██╔╝╚██╗          
- ╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝          
-GIT : https://github.com/RTX-GAMINGG/Bot-ghost-status-remover-by-RTX
-  DISCORD SERVER : https://discord.gg/FUEHs7RCqz
-  YOUTUBE : https://www.youtube.com/channel/UCPbAvYWBgnYhliJa1BIrv0A
- * **********************************************
- *   Code by RTX GAMING
- * **********************************************
+ * Initializes and starts the application
  */
+async function main() {
+  try {
+    logger.info('='.repeat(50));
+    logger.info(`Starting ${config.app.name}`);
+    logger.info(`Environment: ${config.app.environment}`);
+    logger.info('='.repeat(50));
 
+    // Initialize Discord bot
+    bot = new DiscordBot();
+    bot.initializeClient();
+    await bot.login();
 
-function updateStatusAndSendMessages() {
-  const currentStatus = statusMessages[currentIndex];
-  const nextStatus = statusMessages[(currentIndex + 1) % statusMessages.length];
+    // Initialize Express server
+    server = new ExpressServer(bot);
+    await server.start();
 
-  client.user.setPresence({
-    activities: [{ name: currentStatus, type: ActivityType.Custom}],
-    status: 'dnd',
-  });
+    logger.success('Application started successfully');
+    logger.info('Press Ctrl+C to stop');
 
-  
-  const textChannel = client.channels.cache.get(channelId);
-
-  if (textChannel instanceof TextChannel) {
-   
-    textChannel.send(`Bot status is: ${currentStatus}`);
-  } else {
-
+  } catch (error) {
+    logger.error('Failed to start application', error);
+    process.exit(1);
   }
-
-  currentIndex = (currentIndex + 1) % statusMessages.length;
 }
 
-client.once('ready', () => {
-  console.log(`\x1b[36m%s\x1b[0m`, `|    ✅ Bot is ready as ${client.user.tag}`);
-  console.log(`\x1b[36m%s\x1b[0m`, `|    ✨HAPPY NEW YEAR MY DEAR FAMILY`);
-  console.log(`\x1b[36m%s\x1b[0m`, `|    ❤️WELCOME TO 2024`);
-  updateStatusAndSendMessages();
+// Handle graceful shutdown
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
-  setInterval(() => {
-    updateStatusAndSendMessages();
-  }, 10000);
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught exception', error);
+  gracefulShutdown('uncaughtException');
 });
 
-login();
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled rejection at:', promise);
+  logger.error('Reason:', reason);
+});
 
-/**
- ██████╗░████████╗██╗░░██╗           
- ██╔══██╗╚══██╔══╝╚██╗██╔╝          
- ██████╔╝░░░██║░░░░╚███╔╝░          
- ██╔══██╗░░░██║░░░░██╔██╗░          
- ██║░░██║░░░██║░░░██╔╝╚██╗          
- ╚═╝░░╚═╝░░░╚═╝░░░╚═╝░░╚═╝          
-GIT : https://github.com/RTX-GAMINGG/Bot-ghost-status-remover-by-RTX
-  DISCORD SERVER : https://discord.gg/FUEHs7RCqz
-  YOUTUBE : https://www.youtube.com/channel/UCPbAvYWBgnYhliJa1BIrv0A
- * **********************************************
- *   Code by RTX GAMING
- * **********************************************
- */
+// Start the application
+main();
